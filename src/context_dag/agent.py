@@ -32,6 +32,8 @@ class JSONAgent:
             history.append({"role": "user", "content": "DAG observation: " + json.dumps(context.observation)})
         raw = self.complete(history)
         data = json.loads(raw)
+        if "action" not in data and "answer" in data:
+            data = {"action": "conclude", "result": raw}
         name = data["action"]
         history.append({"role": "assistant", "content": raw})
         return Action(name=name, verbose=bool(data.get("verbose", False)),

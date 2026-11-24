@@ -56,6 +56,10 @@ When every stage has finished without `conclude`, a separate `finalizer(snapshot
 
 The fixed executor follows the “context DAG and global datastore” abstraction in *MAS Taxonomy & Discussion*. The dynamic executor follows pages 1 and 3 of *general DAG discussion*: a context observes the DAG, decides to yield/spawn/conclude, and a separate finalizer handles the all-yield path. The current `read_dag` tool reads the in-memory graph directly; mirroring its state through the shared datastore remains future work.
 
+## Benchmark pilot
+
+The [HotpotQA pilot](benchmarks/hotpotqa/README.md) contains a three-policy `deepseek-flash` runner and initial three-question results. The dataset and per-question predictions stay local.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

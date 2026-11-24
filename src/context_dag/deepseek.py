@@ -16,6 +16,7 @@ class DeepSeekClient:
             raise RuntimeError("Set DEEPSEEK_API_KEY or pass api_key")
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.usages: list[dict] = []
 
     @staticmethod
     def _windows_user_key() -> str | None:
@@ -40,6 +41,7 @@ class DeepSeekClient:
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             data = json.load(response)
+        self.usages.append(data.get("usage", {}))
         content = data["choices"][0]["message"]["content"]
         if not content or not content.strip():
             raise ValueError("DeepSeek returned empty JSON content")
