@@ -45,6 +45,27 @@ class DynamicTests(unittest.TestCase):
         self.assertEqual(result.answer, "final")
         self.assertEqual(calls[0][-1]["content"], "task")
 
+    def test_yield_resumes_after_later_stage(self):
+        dag = DynamicDAG("root")
+        calls = []
+        def decide(ctx):
+            calls.append((ctx.node_id, ctx.stage))
+            if ctx.node_id == "root":
+                return Action("spawn", children=(("a", "wait"), ("b", "spawn")))
+            if ctx.node_id == "a":
+                return Action("conclude", result="resumed") if ctx.observation else Action("yield")
+            if ctx.node_id == "b":
+                return Action("spawn", children=(("c", "child"),))
+            return Action("yield", result="child done")
+        result = dag.run(decide, lambda snapshot, store: "final")
+        self.assertEqual(result.answer, "resumed")
+        self.assertIn(("a", 2), calls)
+
+    def test_yield_without_later_stage_finalizes(self):
+        result = DynamicDAG("root").run(lambda ctx: Action("yield", result="partial"),
+                                         lambda snapshot, store: "final")
+        self.assertEqual(result.answer, "final")
+
 
 if __name__ == "__main__":
     unittest.main()

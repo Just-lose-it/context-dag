@@ -39,14 +39,14 @@ The default routing action is `push`, so successors see an artifact in `ctx.inbo
 | `yield(result=...)` | Finish this node without ending the whole task. |
 | `conclude(result=...)` | End the task immediately with a final result. |
 
-When every stage has finished without `conclude`, a separate `finalizer(snapshot, store)` produces the answer. `max_nodes` and `max_steps` bound recursive growth. See [examples/dynamic.py](examples/dynamic.py).
+When every stage has finished without `conclude`, a separate `finalizer(snapshot, store)` produces the answer. A yielded node resumes with a fresh DAG observation after a later stage completes; if no later stage runs, the finalizer handles it. `max_nodes` and `max_steps` bound recursive growth. See [examples/dynamic.py](examples/dynamic.py).
 
-`JSONAgent` adapts a model function `complete(messages) -> JSON text` to these actions, keeping separate message histories for each context. This is an application-level tool loop: the model returns a JSON action, the framework executes it, and the next call receives the observation. A model client and finalizer are supplied by the caller; no API key or provider is built into the package.
+`JSONAgent` adapts a model function `complete(messages) -> JSON text` to these actions, keeping separate message histories for each context. This is an application-level tool loop: the model returns a JSON action, the framework executes it, and the next call receives the observation. `DeepSeekClient` supplies an optional `deepseek-flash` client using the official Chat Completions API; it reads `DEEPSEEK_API_KEY` from the environment (or Windows user variables) and never stores it in the repository. A live smoke test is in [examples/deepseek_dynamic.py](examples/deepseek_dynamic.py).
 
 ## Scope and limits
 
 - The fixed executor is sequential in deterministic topological order; its graph cannot change during a run. Neither executor provides parallelism, retry, or persistence.
-- The dynamic executor processes spawned nodes in stages. `yield` finishes a node's stage; it does not resume that node later. Node decisions run sequentially, and there is no concurrent tool waiting.
+- The dynamic executor processes spawned nodes in stages. A yielded node resumes after a later stage completes, but node decisions still run sequentially; there is no concurrent tool waiting.
 - In the fixed executor each node runs once and may return an `Artifact`, a list or tuple of artifacts, or an ordinary value.
 - Direct edges currently deliver to every successor; per-edge artifact filtering is a planned extension. Direct delivery does not enforce store reader permissions.
 - Store versions protect future reads; an artifact already delivered to a node cannot be recalled.
