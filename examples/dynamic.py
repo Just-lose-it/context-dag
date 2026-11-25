@@ -10,6 +10,8 @@ dag = DynamicDAG("Summarize two topics")
 
 def decide(ctx):
     if ctx.node_id == "root":
+        if ctx.observation and "completed_children" in ctx.observation:
+            return Action("yield")
         return Action("spawn", children=(("a", "Summarize topic A"), ("b", "Summarize topic B")))
     if ctx.observation is None:
         return Action("read_dag", verbose=False)
@@ -17,7 +19,7 @@ def decide(ctx):
 
 
 def finalizer(snapshot, store):
-    return " | ".join(n["result"] for n in snapshot["nodes"] if n["status"] == "yielded")
+    return " | ".join(n["result"] for n in snapshot["nodes"] if n["status"] == "yielded" and n["result"])
 
 
 result = dag.run(decide, finalizer)

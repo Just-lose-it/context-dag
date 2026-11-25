@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
-from .core import SharedStore
+from .core import Artifact, SharedStore
 
-ActionName = Literal["read_dag", "read_docs", "spawn", "yield", "conclude"]
+ActionName = Literal["read_dag", "read_docs", "read_result", "spawn", "yield", "conclude"]
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class Action:
     verbose: bool = False
     children: tuple[tuple[str, str], ...] = ()  # (node_id, prompt)
     documents: tuple[str, ...] = ()
+    key: str = ""
     result: str = ""
 
 
@@ -53,13 +54,21 @@ class DynamicDAG:
         self.store = SharedStore()
         self.events: list[dict[str, Any]] = []
         self._ran = False
+        self._result_versions: dict[str, int] = {}
 
-    def snapshot(self, verbose: bool = False) -> dict[str, Any]:
+    def snapshot(self, verbose: bool = False, *, viewer: str | None = None,
+                 handoff_limit: int = 256) -> dict[str, Any]:
         nodes = []
         for node in self.nodes.values():
             item = {"id": node.id, "parent": node.parent, "stage": node.stage, "status": node.status}
             if verbose:
-                item.update(prompt=node.prompt, result=node.result)
+                item["prompt"] = node.prompt
+                if viewer is None or viewer == node.id or (
+                    viewer == node.parent and len(node.result) <= handoff_limit
+                ):
+                    item["result"] = node.result
+                elif node.result:
+                    item["result_key"] = f"node/{node.id}/result"
             nodes.append(item)
         return {"nodes": nodes, "edges": [
             {"from": node.parent, "to": node.id} for node in self.nodes.values() if node.parent
@@ -73,6 +82,7 @@ class DynamicDAG:
         max_nodes: int = 64,
         max_steps: int = 256,
         read_documents: Callable[[tuple[str, ...], str], dict[str, Any]] | None = None,
+        handoff_limit: int = 256,
     ) -> DynamicResult:
         """Run each stage to completion, then start its spawned children.
 
@@ -80,7 +90,7 @@ class DynamicDAG:
         later stage completes, if one exists. conclude ends the task. If all
         work finishes without concluding, a separate finalizer runs.
         """
-        if max_nodes < 1 or max_steps < 1:
+        if max_nodes < 1 or max_steps < 1 or handoff_limit < 0:
             raise ValueError("limits must be positive")
         if self._ran:
             raise RuntimeError("a DynamicDAG instance can run only once")
@@ -88,6 +98,30 @@ class DynamicDAG:
         steps = 0
         stage = 0
         waiting: dict[str, int] = {}
+
+        def save_result(node: ContextNode) -> None:
+            key = f"node/{node.id}/result"
+            version = self._result_versions.get(node.id, 0) + 1
+            self._result_versions[node.id] = version
+            readers = frozenset({node.parent}) if node.parent else frozenset()
+            self.store.write(Artifact(key, node.result, node.id, version=version, readers=readers))
+            self.events.append({"node": node.id, "action": "store_result", "key": key,
+                                "version": version})
+
+        def child_handoff(parent: ContextNode) -> dict[str, Any]:
+            children = [node for node in self.nodes.values() if node.parent == parent.id]
+            messages = []
+            for child in children:
+                key = f"node/{child.id}/result"
+                direct = len(child.result) <= handoff_limit
+                message = {"node": child.id, "store_key": key, "version": self._result_versions[child.id],
+                           "mode": "direct" if direct else "reference"}
+                if direct:
+                    message["result"] = child.result
+                messages.append(message)
+                self.events.append({"node": child.id, "action": "handoff", "parent": parent.id,
+                                    "mode": message["mode"], "key": key})
+            return {"completed_children": messages}
 
         def run_node(node: ContextNode, current_stage: int, observation: dict[str, Any] | None = None) -> str | None:
             nonlocal steps
@@ -98,7 +132,8 @@ class DynamicDAG:
                 steps += 1
                 action = decide(DecisionContext(node.id, node.prompt, current_stage, observation, self.store))
                 if action.name == "read_dag":
-                    observation = self.snapshot(action.verbose)
+                    observation = self.snapshot(action.verbose, viewer=node.id,
+                                                handoff_limit=handoff_limit)
                     self.events.append({"node": node.id, "action": "read_dag", "verbose": action.verbose})
                     continue
                 if action.name == "read_docs":
@@ -109,6 +144,15 @@ class DynamicDAG:
                     observation = read_documents(action.documents, node.id)
                     self.events.append({"node": node.id, "action": "read_docs",
                                         "documents": list(action.documents)})
+                    continue
+                if action.name == "read_result":
+                    if not action.key:
+                        raise ValueError("read_result requires a key")
+                    artifact = self.store.read(action.key, node.id)
+                    observation = {"key": action.key, "result": artifact.value if artifact else None,
+                                   "found": artifact is not None}
+                    self.events.append({"node": node.id, "action": "read_result", "key": action.key,
+                                        "found": artifact is not None})
                     continue
                 if action.name == "spawn":
                     if not action.children:
@@ -129,12 +173,14 @@ class DynamicDAG:
                 if action.name == "yield":
                     node.status = "yielded"
                     node.result = action.result
+                    save_result(node)
                     waiting[node.id] = current_stage
                     self.events.append({"node": node.id, "action": "yield", "result": action.result})
                     return None
                 if action.name == "conclude":
                     node.status = "concluded"
                     node.result = action.result
+                    save_result(node)
                     self.events.append({"node": node.id, "action": "conclude", "result": action.result})
                     return action.result
                 raise ValueError(f"unknown action: {action.name}")
@@ -142,6 +188,17 @@ class DynamicDAG:
         while True:
             current = [node for node in self.nodes.values() if node.stage == stage and node.status == "pending"]
             if not current:
+                ready_parents = [node for node in self.nodes.values() if node.status == "spawned" and
+                                 all(child.status == "yielded" for child in self.nodes.values()
+                                     if child.parent == node.id)]
+                if ready_parents:
+                    for parent in sorted(ready_parents, key=lambda item: -item.stage):
+                        if parent.status != "spawned":
+                            continue
+                        answer = run_node(parent, stage - 1, child_handoff(parent))
+                        if answer is not None:
+                            return DynamicResult(answer, self.nodes.copy(), tuple(self.events), False)
+                    continue
                 # A yielded context waits until a later stage has finished.
                 resumed = [self.nodes[node_id] for node_id, waited_at in waiting.items() if waited_at < stage - 1]
                 if not resumed:

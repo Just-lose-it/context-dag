@@ -24,6 +24,7 @@ class JSONAgent:
             history.append({"role": "system", "content": (
                 "You control one node of a context DAG. Return one JSON object only. "
                 "Actions: read_dag {verbose: bool}; read_docs {documents: [id,...]}; "
+                "read_result {key: str}; "
                 "spawn {children: [[id,prompt],...]}; "
                 "yield {result: str}; conclude {result: str}. "
                 "Use read_dag when the current graph matters. Spawn only well-scoped subtasks."
@@ -40,4 +41,5 @@ class JSONAgent:
         return Action(name=name, verbose=bool(data.get("verbose", False)),
                       children=tuple((str(x[0]), str(x[1])) for x in data.get("children", [])),
                       documents=tuple(str(x) for x in data.get("documents", [])),
+                      key=str(data.get("key", "")),
                       result=str(data.get("result", "")))

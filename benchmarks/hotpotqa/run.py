@@ -93,6 +93,8 @@ def constrained(item, client):
 
     def decide(ctx):
         nonlocal plan
+        if ctx.node_id == "root" and ctx.observation and "completed_children" in ctx.observation:
+            return Action("yield")
         if ctx.node_id == "root" and ctx.observation is None:
             return Action("read_dag", verbose=False)
         if ctx.node_id == "root":
@@ -110,7 +112,8 @@ def constrained(item, client):
         return Action("yield", result=json.dumps(evidence, ensure_ascii=False))
 
     def finalizer(snapshot, store):
-        evidence = [node["result"] for node in snapshot["nodes"] if node["status"] == "yielded"]
+        evidence = [node["result"] for node in snapshot["nodes"]
+                    if node["status"] == "yielded" and node["result"]]
         return json.dumps(ask(client, ANSWER_SCHEMA,
             f"Question: {item['question']}\nEvidence from two workers:\n{json.dumps(evidence, ensure_ascii=False)}"))
 
