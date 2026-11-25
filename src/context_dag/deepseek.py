@@ -9,13 +9,15 @@ import urllib.request
 
 class DeepSeekClient:
     def __init__(self, *, model: str = "deepseek-flash", api_key: str | None = None,
-                 base_url: str = "https://api.deepseek.com", timeout: int = 120) -> None:
+                 base_url: str = "https://api.deepseek.com", timeout: int = 120,
+                 max_tokens: int = 600) -> None:
         self.model = model
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY") or self._windows_user_key()
         if not self.api_key:
             raise RuntimeError("Set DEEPSEEK_API_KEY or pass api_key")
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.max_tokens = max_tokens
         self.usages: list[dict] = []
 
     @staticmethod
@@ -32,7 +34,7 @@ class DeepSeekClient:
     def __call__(self, messages: list[dict[str, str]]) -> str:
         body = json.dumps({"model": self.model, "messages": messages,
                            "thinking": {"type": "disabled"}, "temperature": 0,
-                           "max_tokens": 600,
+                           "max_tokens": self.max_tokens,
                            "response_format": {"type": "json_object"}}).encode("utf-8")
         request = urllib.request.Request(
             self.base_url + "/chat/completions", data=body, method="POST",

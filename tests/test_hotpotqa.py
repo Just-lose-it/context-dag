@@ -16,6 +16,11 @@ class ScoreTests(unittest.TestCase):
                          {"answer_em": 1, "support_em": 1, "joint_em": 1})
         self.assertEqual(module.score({"answer": "Yes", "sp": [["A #0", 0], ["B", 1]]}, gold)["support_em"], 0)
 
+    def test_evidence_reference_cleanup(self):
+        response = {"evidence": [{"title": "A #2", "index": 0, "quote": "q"}]}
+        self.assertEqual(module.clean_evidence(response)["evidence"][0]["index"], 2)
+        self.assertEqual(response["evidence"][0]["title"], "A")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -58,7 +58,8 @@ The fixed executor follows the “context DAG and global datastore” abstractio
 
 ## Benchmark pilot
 
-The [HotpotQA pilot](benchmarks/hotpotqa/README.md) contains a three-policy `deepseek-flash` runner and initial three-question results. The dataset and per-question predictions stay local.
+The [HotpotQA pilot](benchmarks/hotpotqa/README.md) contains a four-policy `deepseek-flash` runner and initial three-question results. The dataset and per-question predictions stay local.
+The [research direction note](docs/research_direction.md) records the current negative result and the next controlled experiment.
 
 ## License
 

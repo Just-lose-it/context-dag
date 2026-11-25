@@ -28,6 +28,19 @@ def ask(client, system, user):
 ANSWER_SCHEMA = ('Return {"answer":"short answer", "sp":[["document title", sentence_index], ...]}. '
                  'For yes/no questions answer exactly yes or no. Cite only supplied sentences. '
                  'Use the document title without the #sentence suffix.')
+EVIDENCE_SCHEMA = ('Find useful evidence for this question. Return '
+                   '{"evidence":[{"title":"exact document title without #index",'
+                   '"index":0,"quote":"..."}, ...]}. Do not answer yet.')
+
+
+def clean_evidence(response):
+    """Convert our displayed [title #index] reference to canonical fields."""
+    for evidence in response.get("evidence", []):
+        match = re.fullmatch(r"(.+) #(\d+)", str(evidence.get("title", "")))
+        if match:
+            evidence["title"] = match.group(1)
+            evidence["index"] = int(match.group(2))
+    return response
 
 
 def single(item, client):
@@ -39,9 +52,8 @@ def fixed(item, client):
     evidence = []
     for chunk in chunks:
         local = dict(item, context=chunk)
-        evidence.append(ask(client,
-            'Find useful evidence for this question. Return {"evidence":[{"title":"...","index":0,"quote":"..."}, ...]}. Do not answer yet.',
-            f"Question: {item['question']}\nSentences:\n{passages(local)}"))
+        evidence.append(clean_evidence(ask(client, EVIDENCE_SCHEMA,
+            f"Question: {item['question']}\nSentences:\n{passages(local)}")))
     return ask(client, ANSWER_SCHEMA,
         f"Question: {item['question']}\nEvidence from two workers:\n{json.dumps(evidence, ensure_ascii=False)}")
 
@@ -60,6 +72,40 @@ def dynamic(item, client):
             f"Question: {item['question']}\nNode results:\n{json.dumps(snapshot, ensure_ascii=False)}"))
     result = dag.run(agent, finalizer, max_nodes=4, max_steps=12)
     return json.loads(result.answer), len(result.nodes), list(result.events)
+
+
+def constrained(item, client):
+    """The model plans a document split; the DAG runs two evidence contexts."""
+    titles = [title for title, _ in item["context"]]
+    title_map = {title: sentences for title, sentences in item["context"]}
+    dag = DynamicDAG(f"Investigate: {item['question']}")
+    plan = None
+
+    def decide(ctx):
+        nonlocal plan
+        if ctx.node_id == "root" and ctx.observation is None:
+            return Action("read_dag", verbose=False)
+        if ctx.node_id == "root":
+            plan = ask(client,
+                'Split all document titles into two disjoint evidence groups. Return {"group_a":["exact title",...],"group_b":["exact title",...]}. Include every title exactly once. Put likely complementary clues in different groups.',
+                f"Question: {item['question']}\nTitles: {json.dumps(titles, ensure_ascii=False)}\nDAG: {json.dumps(ctx.observation)}")
+            a, b = plan["group_a"], plan["group_b"]
+            if not a or not b or len(a + b) != len(titles) or set(a + b) != set(titles):
+                raise ValueError("planner must partition all document titles exactly once")
+            return Action("spawn", children=(("worker_a", json.dumps(a)), ("worker_b", json.dumps(b))))
+        selected = json.loads(ctx.prompt)
+        local = dict(item, context=[(title, title_map[title]) for title in selected])
+        evidence = clean_evidence(ask(client, EVIDENCE_SCHEMA,
+            f"Question: {item['question']}\nSentences:\n{passages(local)}"))
+        return Action("yield", result=json.dumps(evidence, ensure_ascii=False))
+
+    def finalizer(snapshot, store):
+        evidence = [node["result"] for node in snapshot["nodes"] if node["status"] == "yielded"]
+        return json.dumps(ask(client, ANSWER_SCHEMA,
+            f"Question: {item['question']}\nEvidence from two workers:\n{json.dumps(evidence, ensure_ascii=False)}"))
+
+    result = dag.run(decide, finalizer, max_nodes=3, max_steps=8)
+    return json.loads(result.answer), len(result.nodes), list(result.events), plan
 
 
 def normalize(text):
@@ -81,21 +127,29 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=Path(__file__).parent / "data" / "hotpot_dev_distractor_v1.json")
     parser.add_argument("--count", type=int, default=3)
+    parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--output", type=Path, default=Path(__file__).parent / "results" / "pilot.jsonl")
+    parser.add_argument("--policies", nargs="+", choices=("single", "fixed", "dynamic", "constrained"),
+                        default=("single", "fixed", "dynamic", "constrained"))
     args = parser.parse_args()
-    items = json.loads(args.data.read_text(encoding="utf-8"))[:args.count]
+    items = json.loads(args.data.read_text(encoding="utf-8"))[args.start:args.start + args.count]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as handle:
         for item in items:
             row = {"id": item["_id"], "type": item["type"], "level": item["level"]}
-            for name in ("single", "fixed", "dynamic"):
-                client = DeepSeekClient()
+            for name in args.policies:
+                client = DeepSeekClient(max_tokens=1200)
                 try:
                     result = globals()[name](item, client)
                     if name == "dynamic":
                         prediction, nodes, events = result
                         row[name + "_nodes"] = nodes
                         row[name + "_events"] = events
+                    elif name == "constrained":
+                        prediction, nodes, events, plan = result
+                        row[name + "_nodes"] = nodes
+                        row[name + "_events"] = events
+                        row[name + "_plan"] = plan
                     else:
                         prediction = result
                     row[name] = {"prediction": prediction, **score(prediction, item),
@@ -106,7 +160,8 @@ def main():
                                  "calls": len(client.usages)}
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
             handle.flush()
-            print(row["id"], {name: row[name].get("joint_em", "error") for name in ("single", "fixed", "dynamic")}, flush=True)
+            print(row["id"], {name: row[name].get("joint_em", "error")
+                               for name in args.policies}, flush=True)
 
 
 if __name__ == "__main__":
