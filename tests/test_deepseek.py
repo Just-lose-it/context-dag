@@ -10,6 +10,12 @@ from context_dag import DeepSeekClient
 
 
 class DeepSeekTests(unittest.TestCase):
+    def test_total_budget_stops_next_call(self):
+        client = DeepSeekClient(api_key="test-key", total_token_budget=10)
+        client.usages.append({"total_tokens": 10})
+        with self.assertRaisesRegex(RuntimeError, "budget exhausted"):
+            client([{"role": "user", "content": "test"}])
+
     def test_request_uses_json_mode_and_model(self):
         class Response(io.BytesIO):
             def __enter__(self):

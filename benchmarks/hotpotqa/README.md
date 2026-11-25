@@ -1,6 +1,6 @@
 # HotpotQA distractor pilot
 
-This folder compares four policies on the [HotpotQA distractor dev set](https://hotpotqa.github.io/): one model call with all 10 paragraphs (`single`), two fixed evidence workers plus an answer call (`fixed`), a free `DynamicDAG` with `JSONAgent` (`dynamic`), and a constrained dynamic DAG (`constrained`). The constrained policy reads the DAG, asks the model to divide document titles between two workers, spawns them, and runs a finalizer. All use `deepseek-flash`, temperature 0, non-thinking mode.
+This folder compares five policies on the [HotpotQA distractor dev set](https://hotpotqa.github.io/): one model call with all 10 paragraphs (`single`), two fixed evidence workers plus an answer call (`fixed`), a free `DynamicDAG` with `JSONAgent` (`dynamic`), a model-planned two-worker DAG (`constrained`), and an `adaptive` policy with `read_docs` and an evidence-completeness gate. All use `deepseek-flash`, temperature 0, non-thinking mode.
 
 ## Data
 
@@ -35,4 +35,12 @@ This verifies the dynamic execution path but provides no evidence of accuracy im
 
 ## Next controlled comparison
 
-Let the planner choose **whether** to spawn and how many workers to use, based on evidence gaps or expected value rather than titles alone. Run a larger, preselected sample and report results by comparison/bridge type and difficulty, with paired item-level outcomes and total input/output tokens. Match total budgets and add a single-agent retry/sampling baseline. Do not interpret reduced calls alone as a gain if supporting facts are wrong. See [research direction](../../docs/research_direction.md).
+### Adaptive action prototype (diagnostic runs)
+
+`adaptive` first inspects the DAG, then can read up to five named documents per tool call, spawn workers, yield, or conclude. If the root proposes a conclusion with fewer than two distinct cited documents, a rule spawns a verifier. A separate model call first repairs malformed answer structure, so formatting failure is not itself evidence of a missing fact. Invalid document requests are returned as tool observations.
+
+On dev items 6–10, **before** separating formatting from evidence checks, the gate spawned on all five. Joint EM was 2/5 for single, 1/5 for fixed, and 2/5 for adaptive; total calls were 5, 15, and 25. This did not show a gain over single and did not demonstrate selective spawning. On items 11–13, after the change, one run concluded directly, one spawned a verifier, and one stopped on an invalid document request. The invalid request was handled in a targeted retry. These items were used to debug the protocol, so their scores are not an independent estimate. Across runs, answer correctness often exceeded supporting-fact correctness.
+
+### Next controlled comparison
+
+Freeze a larger new sample **before** modifying the controller again. Compare against a single-agent retry/sampling baseline at the same total token cap, report errors separately, and record actions, document reads, support completeness, total tokens, and latency by item. The current 8000-token cap is enforced from returned usage; one final call may overshoot. Do not interpret fewer calls alone as a gain if supporting facts are wrong. See [research direction](../../docs/research_direction.md).

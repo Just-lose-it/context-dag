@@ -21,6 +21,10 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(module.clean_evidence(response)["evidence"][0]["index"], 2)
         self.assertEqual(response["evidence"][0]["title"], "A")
 
+    def test_verification_gate_requires_two_documents(self):
+        self.assertTrue(module.needs_verification('{"answer":"x","sp":[["A",0]]}'))
+        self.assertFalse(module.needs_verification('{"answer":"x","sp":[["A",0],["B",1]]}'))
+
 
 if __name__ == "__main__":
     unittest.main()

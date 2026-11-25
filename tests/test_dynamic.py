@@ -66,6 +66,17 @@ class DynamicTests(unittest.TestCase):
                                          lambda snapshot, store: "final")
         self.assertEqual(result.answer, "final")
 
+    def test_read_docs_observation(self):
+        dag = DynamicDAG("find evidence")
+        def decide(ctx):
+            if ctx.observation is None:
+                return Action("read_docs", documents=("A",))
+            self.assertEqual(ctx.observation["A"], "text")
+            return Action("conclude", result="done")
+        result = dag.run(decide, lambda snapshot, store: "unused",
+                         read_documents=lambda ids, node: {"A": "text"})
+        self.assertEqual(result.events[0]["action"], "read_docs")
+
 
 if __name__ == "__main__":
     unittest.main()

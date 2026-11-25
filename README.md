@@ -30,11 +30,12 @@ The default routing action is `push`, so successors see an artifact in `ctx.inbo
 
 ## Dynamic DAG and ReAct-style loop
 
-`DynamicDAG` starts with a root prompt. A `decide(context) -> Action` callback runs repeatedly for each context node. Its four actions correspond to the updated slides:
+`DynamicDAG` starts with a root prompt. A `decide(context) -> Action` callback runs repeatedly for each context node. Four actions follow the updated slides; `read_docs` is an additional task tool:
 
 | Action | Effect |
 | --- | --- |
 | `read_dag(verbose=False)` | Observe node/edge IDs and statuses; `verbose=True` also shows prompts and results. The observation is passed to the next decision. |
+| `read_docs(documents=(...))` | Read documents from a caller-supplied tool; the returned observation is passed to the next decision. |
 | `spawn(children=((id, prompt), ...))` | Add new child contexts for the next stage. The parent finishes its current stage. |
 | `yield(result=...)` | Finish this node without ending the whole task. |
 | `conclude(result=...)` | End the task immediately with a final result. |
@@ -42,6 +43,8 @@ The default routing action is `push`, so successors see an artifact in `ctx.inbo
 When every stage has finished without `conclude`, a separate `finalizer(snapshot, store)` produces the answer. A yielded node resumes with a fresh DAG observation after a later stage completes; if no later stage runs, the finalizer handles it. `max_nodes` and `max_steps` bound recursive growth. See [examples/dynamic.py](examples/dynamic.py).
 
 `JSONAgent` adapts a model function `complete(messages) -> JSON text` to these actions, keeping separate message histories for each context. This is an application-level tool loop: the model returns a JSON action, the framework executes it, and the next call receives the observation. `DeepSeekClient` supplies an optional `deepseek-flash` client using the official Chat Completions API; it reads `DEEPSEEK_API_KEY` from the environment (or Windows user variables) and never stores it in the repository. A live smoke test is in [examples/deepseek_dynamic.py](examples/deepseek_dynamic.py).
+
+For `read_docs`, pass a `read_documents(ids, node_id)` callback to `DynamicDAG.run`. The callback should enforce document permissions and return errors as observations when a request can be corrected. `DeepSeekClient(total_token_budget=...)` stops further calls once observed usage reaches the cap; a call can exceed the cap because exact usage arrives with the response.
 
 ## Scope and limits
 

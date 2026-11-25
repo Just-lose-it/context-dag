@@ -23,13 +23,14 @@ class JSONAgent:
         if not history:
             history.append({"role": "system", "content": (
                 "You control one node of a context DAG. Return one JSON object only. "
-                "Actions: read_dag {verbose: bool}; spawn {children: [[id,prompt],...]}; "
+                "Actions: read_dag {verbose: bool}; read_docs {documents: [id,...]}; "
+                "spawn {children: [[id,prompt],...]}; "
                 "yield {result: str}; conclude {result: str}. "
                 "Use read_dag when the current graph matters. Spawn only well-scoped subtasks."
             )})
             history.append({"role": "user", "content": context.prompt})
         if context.observation is not None:
-            history.append({"role": "user", "content": "DAG observation: " + json.dumps(context.observation)})
+            history.append({"role": "user", "content": "Tool observation: " + json.dumps(context.observation)})
         raw = self.complete(history)
         data = json.loads(raw)
         if "action" not in data and "answer" in data:
@@ -38,4 +39,5 @@ class JSONAgent:
         history.append({"role": "assistant", "content": raw})
         return Action(name=name, verbose=bool(data.get("verbose", False)),
                       children=tuple((str(x[0]), str(x[1])) for x in data.get("children", [])),
+                      documents=tuple(str(x) for x in data.get("documents", [])),
                       result=str(data.get("result", "")))

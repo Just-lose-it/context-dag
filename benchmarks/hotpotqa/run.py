@@ -43,6 +43,16 @@ def clean_evidence(response):
     return response
 
 
+def needs_verification(result):
+    """A task-independent evidence completeness check, without gold answers."""
+    try:
+        data = json.loads(result)
+        facts = data.get("sp", [])
+        return len({fact[0] for fact in facts if isinstance(fact, list) and len(fact) == 2}) < 2
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return True
+
+
 def single(item, client):
     return ask(client, ANSWER_SCHEMA, f"Question: {item['question']}\nSentences:\n{passages(item)}")
 
@@ -108,6 +118,87 @@ def constrained(item, client):
     return json.loads(result.answer), len(result.nodes), list(result.events), plan
 
 
+def adaptive(item, client):
+    """Free action choice with on-demand document reads and optional workers."""
+    title_map = {title: sentences for title, sentences in item["context"]}
+    root = (f"Question: {item['question']}\nAvailable document titles: "
+            f"{json.dumps(list(title_map), ensure_ascii=False)}\n"
+            "First inspect the DAG, then read documents as needed. You may spawn 1 or 2 evidence workers "
+            "if clues can be investigated independently; otherwise work in this context. "
+            "Workers must yield evidence. Conclude with a JSON string containing answer and sp "
+            "(exact document title and sentence index). Never answer before reading evidence.")
+    dag = DynamicDAG(root)
+    agent = JSONAgent(client)
+    inspected = False
+    root_candidate = ""
+    read_titles = []
+
+    def read_documents(ids, node):
+        if len(ids) > 5:
+            return {"error": "Read at most five document titles per call"}
+        unknown = [title for title in ids if title not in title_map]
+        if unknown:
+            return {"error": f"Unknown document titles: {unknown}",
+                    "available_titles": list(title_map)}
+        if node == "root":
+            read_titles.extend(ids)
+        return {title: [f"#{i} {sentence}" for i, sentence in enumerate(title_map[title])]
+                for title in ids}
+
+    def decide(ctx):
+        nonlocal inspected, root_candidate
+        if ctx.node_id == "root" and not inspected:
+            inspected = True
+            return Action("read_dag")
+        action = agent(ctx)
+        if ctx.node_id != "root" and action.name == "conclude":
+            return Action("yield", result=action.result)
+        if ctx.node_id == "root" and action.name in ("conclude", "yield"):
+            candidate = action.result
+            try:
+                parsed = json.loads(candidate)
+                structured = isinstance(parsed.get("answer"), str) and isinstance(parsed.get("sp"), list)
+            except (json.JSONDecodeError, AttributeError):
+                structured = False
+            if not structured:
+                local = dict(item, context=[(title, title_map[title]) for title in dict.fromkeys(read_titles)])
+                candidate = json.dumps(ask(client, ANSWER_SCHEMA,
+                    f"Question: {item['question']}\nAgent result: {candidate}\n"
+                    f"Documents read by agent:\n{passages(local)}"))
+            if needs_verification(candidate):
+                root_candidate = candidate
+                return Action("spawn", children=(("verifier",
+                    f"Question: {item['question']}\nCandidate: {root_candidate}\n"
+                    f"Document titles: {json.dumps(list(title_map), ensure_ascii=False)}\n"
+                    "Read documents needed to find independent supporting sentences from at least "
+                    "two different documents. Yield evidence with exact title and sentence index."),))
+            return Action("conclude", result=candidate)
+        return action
+
+    def finalizer(snapshot, store):
+        return json.dumps(ask(client, ANSWER_SCHEMA,
+            f"Question: {item['question']}\nInitial candidate: {root_candidate}\n"
+            f"Node results:\n{json.dumps(snapshot, ensure_ascii=False)}"))
+
+    result = dag.run(decide, finalizer, max_nodes=3, max_steps=12,
+                     read_documents=read_documents)
+    try:
+        prediction = json.loads(result.answer)
+        valid = (isinstance(prediction, dict) and isinstance(prediction.get("answer"), str)
+                 and isinstance(prediction.get("sp"), list)
+                 and all(isinstance(fact, list) and len(fact) == 2 for fact in prediction["sp"]))
+    except json.JSONDecodeError:
+        valid = False
+    if not valid:
+        read_titles = [title for event in result.events if event["action"] == "read_docs"
+                       for title in event["documents"]]
+        local = dict(item, context=[(title, title_map[title]) for title in dict.fromkeys(read_titles)])
+        prediction = ask(client, ANSWER_SCHEMA,
+            f"Question: {item['question']}\nAgent result: {result.answer}\n"
+            f"Documents read by agent:\n{passages(local)}")
+    return prediction, len(result.nodes), list(result.events)
+
+
 def normalize(text):
     text = text.lower().translate(str.maketrans("", "", string.punctuation))
     return re.sub(r"\s+", " ", re.sub(r"\b(a|an|the)\b", " ", text)).strip()
@@ -129,8 +220,9 @@ def main():
     parser.add_argument("--count", type=int, default=3)
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--output", type=Path, default=Path(__file__).parent / "results" / "pilot.jsonl")
-    parser.add_argument("--policies", nargs="+", choices=("single", "fixed", "dynamic", "constrained"),
-                        default=("single", "fixed", "dynamic", "constrained"))
+    parser.add_argument("--policies", nargs="+", choices=("single", "fixed", "dynamic", "constrained", "adaptive"),
+                        default=("single", "fixed", "dynamic", "constrained", "adaptive"))
+    parser.add_argument("--token-budget", type=int, default=8000)
     args = parser.parse_args()
     items = json.loads(args.data.read_text(encoding="utf-8"))[args.start:args.start + args.count]
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -138,7 +230,7 @@ def main():
         for item in items:
             row = {"id": item["_id"], "type": item["type"], "level": item["level"]}
             for name in args.policies:
-                client = DeepSeekClient(max_tokens=1200)
+                client = DeepSeekClient(max_tokens=1200, total_token_budget=args.token_budget)
                 try:
                     result = globals()[name](item, client)
                     if name == "dynamic":
@@ -150,6 +242,10 @@ def main():
                         row[name + "_nodes"] = nodes
                         row[name + "_events"] = events
                         row[name + "_plan"] = plan
+                    elif name == "adaptive":
+                        prediction, nodes, events = result
+                        row[name + "_nodes"] = nodes
+                        row[name + "_events"] = events
                     else:
                         prediction = result
                     row[name] = {"prediction": prediction, **score(prediction, item),
@@ -157,7 +253,8 @@ def main():
                                  "tokens": sum(x.get("total_tokens", 0) for x in client.usages)}
                 except Exception as error:
                     row[name] = {"error": type(error).__name__ + ": " + str(error),
-                                 "calls": len(client.usages)}
+                                 "calls": len(client.usages),
+                                 "tokens": sum(x.get("total_tokens", 0) for x in client.usages)}
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
             handle.flush()
             print(row["id"], {name: row[name].get("joint_em", "error")

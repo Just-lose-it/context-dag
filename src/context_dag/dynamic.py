@@ -7,7 +7,7 @@ from typing import Any, Callable, Literal
 
 from .core import SharedStore
 
-ActionName = Literal["read_dag", "spawn", "yield", "conclude"]
+ActionName = Literal["read_dag", "read_docs", "spawn", "yield", "conclude"]
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,7 @@ class Action:
     name: ActionName
     verbose: bool = False
     children: tuple[tuple[str, str], ...] = ()  # (node_id, prompt)
+    documents: tuple[str, ...] = ()
     result: str = ""
 
 
@@ -71,6 +72,7 @@ class DynamicDAG:
         *,
         max_nodes: int = 64,
         max_steps: int = 256,
+        read_documents: Callable[[tuple[str, ...], str], dict[str, Any]] | None = None,
     ) -> DynamicResult:
         """Run each stage to completion, then start its spawned children.
 
@@ -98,6 +100,15 @@ class DynamicDAG:
                 if action.name == "read_dag":
                     observation = self.snapshot(action.verbose)
                     self.events.append({"node": node.id, "action": "read_dag", "verbose": action.verbose})
+                    continue
+                if action.name == "read_docs":
+                    if read_documents is None:
+                        raise ValueError("read_docs requires a read_documents tool")
+                    if not action.documents:
+                        raise ValueError("read_docs requires document IDs")
+                    observation = read_documents(action.documents, node.id)
+                    self.events.append({"node": node.id, "action": "read_docs",
+                                        "documents": list(action.documents)})
                     continue
                 if action.name == "spawn":
                     if not action.children:
