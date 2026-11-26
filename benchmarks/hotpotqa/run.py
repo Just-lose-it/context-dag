@@ -222,12 +222,21 @@ def main():
     parser.add_argument("--data", type=Path, default=Path(__file__).parent / "data" / "hotpot_dev_distractor_v1.json")
     parser.add_argument("--count", type=int, default=3)
     parser.add_argument("--start", type=int, default=0)
+    parser.add_argument("--ids-file", type=Path)
+    parser.add_argument("--group", choices=("comparison", "bridge"))
     parser.add_argument("--output", type=Path, default=Path(__file__).parent / "results" / "pilot.jsonl")
     parser.add_argument("--policies", nargs="+", choices=("single", "fixed", "dynamic", "constrained", "adaptive"),
                         default=("single", "fixed", "dynamic", "constrained", "adaptive"))
     parser.add_argument("--token-budget", type=int, default=8000)
     args = parser.parse_args()
-    items = json.loads(args.data.read_text(encoding="utf-8"))[args.start:args.start + args.count]
+    all_items = json.loads(args.data.read_text(encoding="utf-8"))
+    if args.ids_file:
+        selection = json.loads(args.ids_file.read_text(encoding="utf-8"))["ids"]
+        ids = selection[args.group] if args.group else selection["comparison"] + selection["bridge"]
+        lookup = {item["_id"]: item for item in all_items}
+        items = [lookup[item_id] for item_id in ids]
+    else:
+        items = all_items[args.start:args.start + args.count]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as handle:
         for item in items:

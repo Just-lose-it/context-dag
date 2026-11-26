@@ -1,0 +1,33 @@
+{
+  "method": "First 10 IDs per type by SHA-256(context-dag-v1:ID), among dev items after index 13 with context length at least the type-specific 75th-percentile threshold.",
+  "threshold_chars": {
+    "comparison": 5850,
+    "bridge": 6455
+  },
+  "ids": {
+    "comparison": [
+      "5a863b27554299211dda2ab6",
+      "5ac0e74d554299294b219052",
+      "5ab6f222554299110f219a78",
+      "5a9052765542995651fb513d",
+      "5ab7ff1d5542990e739ec7b9",
+      "5ae28f43554299492dc91c2f",
+      "5adf430e5542993a75d2645e",
+      "5abf12f25542997719eab667",
+      "5a74f8235542993748c89766",
+      "5a7f7b365542992097ad2f80"
+    ],
+    "bridge": [
+      "5a7905ca554299148911f9c8",
+      "5a806cdf5542996402f6a508",
+      "5adcb4ae5542994734353774",
+      "5ab9bb8355429970cfb8eb8b",
+      "5a7c90125542990527d554d1",
+      "5ae4c8f35542990ba0bbb130",
+      "5a7a32225542990783324eb4",
+      "5ae471fa55429970de88d965",
+      "5a9080275542995651fb5175",
+      "5a79db655542994bb94570f4"
+    ]
+  }
+}
