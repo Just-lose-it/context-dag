@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from context_dag import Artifact, ContextDAG, Node, SharedStore
+from context_dag import Artifact, ContextDAG, Node, RoutingDecision, SharedStore
 
 
 class ContextDAGTests(unittest.TestCase):
@@ -33,6 +33,26 @@ class ContextDAGTests(unittest.TestCase):
         graph.add_edge("a", "b")
         result = graph.execute(lambda artifact, successors: "store")
         self.assertEqual(result.outputs["b"], (0, 42))
+
+    def test_direct_route_to_selected_successor(self):
+        graph = ContextDAG()
+        graph.add_node(Node("a", lambda ctx: Artifact("k", "content", "a")))
+        graph.add_node(Node("b", lambda ctx: len(ctx.inbox)))
+        graph.add_node(Node("c", lambda ctx: len(ctx.inbox)))
+        graph.add_edge("a", "b")
+        graph.add_edge("a", "c")
+        result = graph.execute(lambda artifact, successors:
+                               RoutingDecision("push", frozenset({"b"})))
+        self.assertEqual((result.outputs["b"], result.outputs["c"]), (1, 0))
+        self.assertEqual(result.events[-1]["delivered_to"], ["b"])
+
+    def test_direct_route_rejects_non_successor(self):
+        graph = ContextDAG()
+        graph.add_node(Node("a", lambda ctx: Artifact("k", "content", "a")))
+        graph.add_node(Node("b", lambda ctx: None))
+        with self.assertRaises(ValueError):
+            graph.execute(lambda artifact, successors:
+                          RoutingDecision("push", frozenset({"b"})))
 
     def test_cycle_rejected_without_mutating_graph(self):
         graph = ContextDAG()

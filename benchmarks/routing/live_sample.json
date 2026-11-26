@@ -1,0 +1,31 @@
+{
+  "method": "Hash-order first three unused answerable 4-hop dev items with 20 paragraphs as shared-report questions; first 21 unused answerable 2-hop items with 20 paragraphs and a natural first decomposition question as seven disjoint local questions per batch. No model output or gold answer was used for selection.",
+  "shared_ids": [
+    "4hop1__199362_765799_282674_759393",
+    "4hop3__387712_132409_371500_35031",
+    "4hop3__661103_698586_91248_54362"
+  ],
+  "local_ids": [
+    "2hop__19007_60935",
+    "2hop__104095_40501",
+    "2hop__35137_22899",
+    "2hop__29368_29376",
+    "2hop__107601_110222",
+    "2hop__152229_604644",
+    "2hop__94507_654855",
+    "2hop__28287_89399",
+    "2hop__9014_679424",
+    "2hop__13353_85402",
+    "2hop__37656_160040",
+    "2hop__124592_402641",
+    "2hop__1667_40501",
+    "2hop__145288_502838",
+    "2hop__24697_634490",
+    "2hop__35989_623159",
+    "2hop__40970_90367",
+    "2hop__156700_63853",
+    "2hop__21104_16335",
+    "2hop__130668_126089",
+    "2hop__153573_44085"
+  ]
+}

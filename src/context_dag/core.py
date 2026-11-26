@@ -9,6 +9,14 @@ Route = Literal["push", "store", "both", "hold"]
 
 
 @dataclass(frozen=True)
+class RoutingDecision:
+    """Route an artifact, optionally limiting direct delivery to named successors."""
+
+    mode: Route
+    targets: frozenset[str] | None = None
+
+
+@dataclass(frozen=True)
 class Artifact:
     key: str
     value: Any
@@ -102,7 +110,7 @@ class ContextDAG:
             raise ValueError("cycle in context DAG")
         return result
 
-    def execute(self, route: Callable[[Artifact, frozenset[str]], Route] | None = None) -> RunResult:
+    def execute(self, route: Callable[[Artifact, frozenset[str]], Route | RoutingDecision] | None = None) -> RunResult:
         """Execute nodes once in topological order; node code decides store reads."""
         route = route or (lambda artifact, successors: "push")
         store = SharedStore()
@@ -123,15 +131,24 @@ class ContextDAG:
             for artifact in produced:
                 if artifact.producer != node_id:
                     raise ValueError("artifact producer must match running node")
-                action = route(artifact, frozenset(self.edges[node_id]))
+                choice = route(artifact, frozenset(self.edges[node_id]))
+                action = choice.mode if isinstance(choice, RoutingDecision) else choice
                 if action not in ("push", "store", "both", "hold"):
                     raise ValueError(f"invalid route: {action}")
+                targets = (choice.targets if isinstance(choice, RoutingDecision) else None)
+                if targets is not None:
+                    if action not in ("push", "both"):
+                        raise ValueError("targets require push or both")
+                    if not targets <= self.edges[node_id]:
+                        raise ValueError("direct targets must be outgoing successors")
+                delivered_to = sorted(self.edges[node_id] if targets is None else targets)
                 artifacts.append(artifact)
                 if action in ("push", "both"):
-                    for target in sorted(self.edges[node_id]):
+                    for target in delivered_to:
                         inboxes[target].append(artifact)
                 if action in ("store", "both"):
                     store.write(artifact)
                 events.append({"kind": "route", "key": artifact.key, "source": node_id,
-                               "targets": sorted(self.edges[node_id]), "action": action})
+                               "targets": sorted(self.edges[node_id]), "delivered_to":
+                               delivered_to if action in ("push", "both") else [], "action": action})
         return RunResult(outputs, tuple(artifacts), tuple(events))
