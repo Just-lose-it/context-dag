@@ -29,6 +29,8 @@ assert result.outputs["reader"] == "evidence"
 
 The default routing action is `push`, so successors see an artifact in `ctx.inbox`. With `store`, the inbox stays empty and a node must call `ctx.read(key)`. `both` does both; `hold` exposes neither. Store reads require a verified artifact and honor its optional `readers` set. Rewriting a key requires a strictly larger version. Run results include outputs, artifacts and route/read/store events.
 
+To deliver directly to selected outgoing successors, return `RoutingDecision("push", frozenset({"reader"}))` from the route callback. Plain `push` still delivers to every successor. A selected target must be an outgoing successor.
+
 ## Dynamic DAG and ReAct-style loop
 
 `DynamicDAG` starts with a root prompt. A `decide(context) -> Action` callback runs repeatedly for each context node. Four actions follow the updated slides; `read_docs` is an additional task tool:
@@ -53,7 +55,7 @@ For `read_docs`, pass a `read_documents(ids, node_id)` callback to `DynamicDAG.r
 - The fixed executor is sequential in deterministic topological order; its graph cannot change during a run. Neither executor provides parallelism, retry, or persistence.
 - The dynamic executor processes spawned nodes in stages. Parents resume when direct children yield; node decisions still run sequentially, with no concurrent tool waiting. Results are stored in memory for one run and are not durable across processes.
 - In the fixed executor each node runs once and may return an `Artifact`, a list or tuple of artifacts, or an ordinary value.
-- Direct edges currently deliver to every successor; per-edge artifact filtering is a planned extension. Direct delivery does not enforce store reader permissions.
+- Plain `push` delivers to every successor; `RoutingDecision` can limit direct delivery to a selected set. Direct delivery does not enforce store reader permissions.
 - Store versions protect future reads; an artifact already delivered to a node cannot be recalled.
 - The framework does not choose a routing policy. The `route` callback is where experimental policies, including Idea 1, belong.
 
@@ -63,8 +65,8 @@ The fixed executor follows the “context DAG and global datastore” abstractio
 
 ## Benchmark pilot
 
-The [HotpotQA pilot](benchmarks/hotpotqa/README.md) reports two frozen samples totaling 60 questions. A [MuSiQue pilot](benchmarks/musique/README.md) adds frozen 2-hop and 4-hop samples. Neither establishes an answer-quality gain for the current DAG policies. A [routing fan-out microbenchmark](benchmarks/routing/README.md) verifies the narrower context-exposure benefit of shared storage when few successors need a long artifact. Datasets and per-question predictions stay local.
-The [research direction note](docs/research_direction.md) records the negative QA results and the next end-to-end routing experiment.
+The [HotpotQA pilot](benchmarks/hotpotqa/README.md) reports two frozen samples totaling 60 questions. A [MuSiQue pilot](benchmarks/musique/README.md) adds frozen 2-hop and 4-hop samples. Neither establishes an answer-quality gain for the current DAG policies. [Routing experiments](benchmarks/routing/README.md) include a fan-out mechanism check and a frozen live `deepseek-flash` comparison: targeted handoff and shared read each used 80.7% fewer prompt tokens than broadcast with a known single reader. Datasets and per-question predictions stay local.
+The [research direction note](docs/research_direction.md) records the results and the remaining reader-prediction question.
 
 ## License
 
