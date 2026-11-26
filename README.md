@@ -63,8 +63,8 @@ The fixed executor follows the “context DAG and global datastore” abstractio
 
 ## Benchmark pilot
 
-The [HotpotQA pilot](benchmarks/hotpotqa/README.md) contains a four-policy `deepseek-flash` runner and initial three-question results. The dataset and per-question predictions stay local.
-The [research direction note](docs/research_direction.md) records the current negative result and the next controlled experiment.
+The [HotpotQA pilot](benchmarks/hotpotqa/README.md) reports two frozen samples totaling 60 questions. A [MuSiQue pilot](benchmarks/musique/README.md) adds frozen 2-hop and 4-hop samples. Neither establishes an answer-quality gain for the current DAG policies. A [routing fan-out microbenchmark](benchmarks/routing/README.md) verifies the narrower context-exposure benefit of shared storage when few successors need a long artifact. Datasets and per-question predictions stay local.
+The [research direction note](docs/research_direction.md) records the negative QA results and the next end-to-end routing experiment.
 
 ## License
 

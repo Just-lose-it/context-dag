@@ -44,3 +44,18 @@ On dev items 6–10, **before** separating formatting from evidence checks, the 
 ### Next controlled comparison
 
 Freeze a larger new sample **before** modifying the controller again. Compare against a single-agent retry/sampling baseline at the same total token cap, report errors separately, and record actions, document reads, support completeness, total tokens, and latency by item. The current 8000-token cap is enforced from returned usage; one final call may overshoot. Do not interpret fewer calls alone as a gain if supporting facts are wrong. See [research direction](../../docs/research_direction.md).
+
+## Frozen 60-question comparison
+
+Two disjoint, hash-selected samples were frozen in `selection.json` (10 comparison + 10 bridge) and `selection_v2.json` (20 + 20) before their respective runs. They contain hard, long-context dev items. Results below combine both samples; all conditions use `deepseek-flash`, temperature 0, and an 8,000-token observed-usage cap per question. The first adaptive run preceded the JSON-action retry fix and had 11 protocol errors; the second run used the fix and had one budget error. Errors count as unsuccessful items.
+
+| Type | Policy | Answer EM | Support EM | Joint EM | Errors | Calls | Tokens |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Comparison (30) | Single | 24 | 16 | 14 | 0 | 30 | 62,059 |
+| Comparison (30) | Fixed two workers | 25 | 15 | 13 | 0 | 90 | 80,404 |
+| Comparison (30) | Adaptive DAG | 22 | 14 | 12 | 4 | 123 | 56,200 |
+| Bridge (30) | Single | 19 | 10 | 8 | 0 | 30 | 68,611 |
+| Bridge (30) | Fixed two workers | 20 | 6 | 4 | 0 | 90 | 87,791 |
+| Bridge (30) | Adaptive DAG | 13 | 7 | 5 | 8 | 160 | 103,200 |
+
+The initial 10 comparison items favored fixed workers (4 versus 2 joint EM), but the 20-item disjoint follow-up reversed that result (9 versus 12). The combined sample gives no stable accuracy gain for either DAG policy. Adaptive uses fewer tokens than single on comparison questions but loses two joint-correct answers and has four errors; that is not a net gain. This sample was selected for long, hard cases, so it is not an estimate for the full HotpotQA dev distribution.

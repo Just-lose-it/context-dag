@@ -7,9 +7,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "benchmarks" / "hotpotqa"))
+sys.path.insert(0, str(ROOT))
 from context_dag import DeepSeekClient
-from run import adaptive, fixed, normalize, single
+from benchmarks.hotpotqa.run import adaptive, fixed, normalize, single
 
 HERE = Path(__file__).parent
 
@@ -25,12 +25,18 @@ def score(prediction, item):
     aliases = [item["answer"], *item["answer_aliases"]]
     answer_em = int(normalize(str(prediction.get("answer", ""))) in {normalize(a) for a in aliases})
     gold = {paragraph["idx"] for paragraph in item["paragraphs"] if paragraph["is_supporting"]}
+    title_ids = {}
+    for paragraph in item["paragraphs"]:
+        title_ids.setdefault(paragraph["title"], []).append(paragraph["idx"])
     predicted = set()
     for fact in prediction.get("sp", []):
         if isinstance(fact, list) and len(fact) == 2 and fact[1] == 0:
-            prefix = str(fact[0]).split(" ", 1)[0]
+            title = str(fact[0])
+            prefix = title.split(" ", 1)[0]
             if prefix.startswith("P") and prefix[1:].isdigit():
                 predicted.add(int(prefix[1:]))
+            elif len(title_ids.get(title, [])) == 1:
+                predicted.add(title_ids[title][0])
     return {"answer_em": answer_em, "support_em": int(predicted == gold),
             "support_recall": len(predicted & gold) / len(gold),
             "joint_em": int(answer_em and predicted == gold)}
