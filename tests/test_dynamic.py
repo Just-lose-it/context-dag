@@ -48,6 +48,12 @@ class DynamicTests(unittest.TestCase):
         self.assertEqual(result.answer, "final")
         self.assertEqual(calls[0][-1]["content"], "task")
 
+    def test_json_agent_repairs_missing_action_once(self):
+        replies = iter(['{"thought":"inspect"}', '{"action":"yield","result":"ok"}'])
+        agent = JSONAgent(lambda messages: next(replies))
+        result = DynamicDAG("task").run(agent, lambda snapshot, store: "final")
+        self.assertEqual(result.answer, "final")
+
     def test_yield_resumes_after_later_stage(self):
         dag = DynamicDAG("root")
         calls = []

@@ -153,9 +153,15 @@ def adaptive(item, client):
         if ctx.node_id == "root" and not inspected:
             inspected = True
             return Action("read_dag")
+        if ctx.node_id == "root" and ctx.observation and "completed_children" in ctx.observation:
+            return Action("conclude", result=json.dumps(ask(client, ANSWER_SCHEMA,
+                f"Question: {item['question']}\nInitial candidate: {root_candidate}\n"
+                f"Completed children: {json.dumps(ctx.observation, ensure_ascii=False)}")))
         action = agent(ctx)
         if ctx.node_id != "root" and action.name == "conclude":
             return Action("yield", result=action.result)
+        if ctx.node_id != "root" and action.name == "spawn":
+            return Action("yield", result="Worker requested further delegation; no evidence returned")
         if ctx.node_id == "root" and action.name in ("conclude", "yield"):
             candidate = action.result
             try:

@@ -1,0 +1,55 @@
+{
+  "method": "IDs per type ordered by SHA-256(context-dag-v1:ID), among dev items after index 13 with context length at least the type-specific 75th-percentile threshold.",
+  "offset": 10,
+  "count_per_type": 20,
+  "threshold_chars": {
+    "comparison": 5850,
+    "bridge": 6455
+  },
+  "ids": {
+    "comparison": [
+      "5a8f64605542992414482aaa",
+      "5a77452155429972597f14e1",
+      "5ae0819155429924de1b70ea",
+      "5a8c49655542995e66a47598",
+      "5abc081e5542993f40c73c54",
+      "5a7a4f335542990198eaf11e",
+      "5ab674b7554299110f219a0c",
+      "5ab29486554299545a2cf9a4",
+      "5a851cc85542997b5ce3ffa3",
+      "5abc3d505542993a06baf8a7",
+      "5a735e9155429901807db00d",
+      "5abbe40555429931dba145cd",
+      "5a863ff0554299211dda2ac6",
+      "5a7f10e2554299306751360b",
+      "5abbdb335542992ccd8e7fc1",
+      "5a77ca3955429967ab1052a3",
+      "5a8f7e785542992414482ae6",
+      "5a747a3755429974ef308c09",
+      "5a8a07af55429970aeb70222",
+      "5ab8b02d5542991b5579efdb"
+    ],
+    "bridge": [
+      "5a74994a55429974ef308c2e",
+      "5ab661ac5542995eadeeffb1",
+      "5ae6097c55429929b0807a9a",
+      "5a7e4414554299495941995c",
+      "5ae3992d5542994393b9e722",
+      "5ae1ab715542997f29b3c0f7",
+      "5a7b9a8a554299042af8f78d",
+      "5ab2f4c95542991669774155",
+      "5ac2e97d554299657fa290c0",
+      "5a90b1a15542990a984936ab",
+      "5a7f697c5542992097ad2f59",
+      "5ae6316d5542996de7b71b87",
+      "5ae363ff5542992f92d822bc",
+      "5ae834e95542997ec272776a",
+      "5ac038db554299294b218f57",
+      "5ab31fea554299194fa9356a",
+      "5ae73c065542991e8301cc18",
+      "5ae7eb43554299540e5a5695",
+      "5ab8e70b5542991b5579f031",
+      "5abcd77755429965836004ce"
+    ]
+  }
+}

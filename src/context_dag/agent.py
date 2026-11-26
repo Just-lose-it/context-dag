@@ -34,8 +34,17 @@ class JSONAgent:
             history.append({"role": "user", "content": "Tool observation: " + json.dumps(context.observation)})
         raw = self.complete(history)
         data = json.loads(raw)
+        if "action" not in data and "answer" not in data:
+            repair = history + [{"role": "user", "content": (
+                "Return exactly one JSON action with an action field: "
+                "read_dag, read_docs, read_result, spawn, yield, or conclude."
+            )}]
+            raw = self.complete(repair)
+            data = json.loads(raw)
         if "action" not in data and "answer" in data:
             data = {"action": "conclude", "result": raw}
+        if "action" not in data:
+            raise ValueError("model response has no action")
         name = data["action"]
         history.append({"role": "assistant", "content": raw})
         return Action(name=name, verbose=bool(data.get("verbose", False)),
