@@ -58,7 +58,8 @@ def single(item, client):
 
 
 def fixed(item, client):
-    chunks = (item["context"][:5], item["context"][5:])
+    midpoint = len(item["context"]) // 2
+    chunks = (item["context"][:midpoint], item["context"][midpoint:])
     evidence = []
     for chunk in chunks:
         local = dict(item, context=chunk)
