@@ -45,13 +45,15 @@ def agent_prompt(main_question, lead, *, root=False):
 
 
 def run_policy(row, index, client, policy, leads=None, telemetry=None):
-    nested = policy == "dynamic"
+    nested = policy in ("dynamic", "guarded")
+    guarded = policy == "guarded"
     dag = DynamicDAG(agent_prompt(row["query"], row["query"], root=True))
     agent = JSONAgent(client)
     depth = {"root": 0, "lead_0": 1, "lead_1": 1}
     expanded = set()
     candidate = {}
-    calls = {"search": 0, "read": 0, "spawn": 0, "gap_checks": 0, "read_by_node": {}}
+    calls = {"search": 0, "read": 0, "spawn": 0, "gap_checks": 0,
+             "budget_stops": 0, "read_by_node": {}}
     if telemetry is not None:
         telemetry["dag"] = dag
         telemetry["calls"] = calls
@@ -89,6 +91,11 @@ def run_policy(row, index, client, policy, leads=None, telemetry=None):
                 f"Lead: {ctx.prompt}\nOwn earlier finding: {candidate.get(ctx.node_id, '')}\n"
                 f"Child results: {json.dumps(child_results, ensure_ascii=False)}")
             return Action("yield", result=json.dumps(merged, ensure_ascii=False))
+        if guarded and ctx.node_id != "root":
+            remaining = BUDGET - sum(usage.get("total_tokens", 0) for usage in client.usages)
+            if remaining <= 9000:
+                calls["budget_stops"] += 1
+                return Action("yield", result=candidate.get(ctx.node_id, '{"finding":"unverified","evidence_docids":[]}'))
         action = agent(ctx)
         if action.name == "spawn":
             return Action("yield", result="No verified finding: direct delegation unavailable")
@@ -100,15 +107,25 @@ def run_policy(row, index, client, policy, leads=None, telemetry=None):
             if not nested or depth[ctx.node_id] >= 2 or ctx.node_id in expanded:
                 return Action("yield", result=action.result)
             candidate[ctx.node_id] = action.result
+            if guarded:
+                remaining = BUDGET - sum(usage.get("total_tokens", 0) for usage in client.usages)
+                reserve = 18000 if ctx.node_id == "lead_0" else 12000
+                if calls["spawn"] >= 1 or remaining < reserve:
+                    return Action("yield", result=action.result)
             calls["gap_checks"] += 1
             gap = ask(client,
                 'Evaluate whether a necessary fact for this investigative lead remains unsupported by the finding and cited documents. Return {"missing":["one self-contained factual question",...]}. Give at most two independent missing questions. If the lead is adequately supported, return an empty list. Do not use any gold answer.',
                 f"Lead: {ctx.prompt}\nCurrent finding: {action.result}")
             missing = gap.get("missing", [])
             if isinstance(missing, list):
-                missing = [question for question in missing[:2] if isinstance(question, str) and question.strip()]
+                missing = [question for question in missing[:1 if guarded else 2]
+                           if isinstance(question, str) and question.strip()]
             else:
                 missing = []
+            if guarded:
+                remaining = BUDGET - sum(usage.get("total_tokens", 0) for usage in client.usages)
+                if remaining < (18000 if ctx.node_id == "lead_0" else 12000):
+                    missing = []
             if missing:
                 expanded.add(ctx.node_id)
                 children = []
@@ -176,22 +193,26 @@ def main():
     parser.add_argument("--split", choices=("diagnostic", "evaluation"), required=True)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--selection", type=Path, default=HERE / "selection.json")
+    parser.add_argument("--policies", nargs="+", choices=("single", "flat", "dynamic", "guarded"),
+                        default=("single", "flat", "dynamic"))
     args = parser.parse_args()
-    selection = json.loads((HERE / "selection.json").read_text(encoding="utf-8"))
+    selection = json.loads(args.selection.read_text(encoding="utf-8"))
     offsets = selection[args.split + "_offsets"][:args.limit]
-    output = args.output or HERE / "results" / f"{args.split}.jsonl"
+    suffix = "" if args.selection.name == "selection.json" else f"_{args.selection.stem}"
+    output = args.output or HERE / "results" / f"{args.split}{suffix}.jsonl"
     output.parent.mkdir(parents=True, exist_ok=True)
     previous = [json.loads(line) for line in output.open(encoding="utf-8")] if output.exists() else []
     def payment_blocked(record):
         return any("HTTP Error 402" in str(record.get(name, {}).get("error", ""))
-                   for name in ("single", "flat", "dynamic"))
+                   for name in args.policies)
     done = {entry["offset"] for entry in previous if not payment_blocked(entry)}
     with output.open("a", encoding="utf-8") as handle:
         def emit(record):
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
             handle.flush()
             print(record["offset"], {name: record.get(name, {}).get("answer_em", "error")
-                                    for name in ("single", "flat", "dynamic")}, flush=True)
+                                    for name in args.policies}, flush=True)
         for offset in offsets:
             if offset in done:
                 continue
@@ -200,27 +221,30 @@ def main():
             record = {"offset": offset, "query_id": row["query_id"], "split": args.split,
                       "candidate_docs": len({d["docid"] for group in ("evidence_docs", "gold_docs", "negative_docs")
                                              for d in row[group]})}
-            record["single"] = evaluate(row, index, "single")
-            if payment_blocked(record):
-                emit(record)
-                return
-            planner = DeepSeekClient(max_tokens=900, total_token_budget=BUDGET)
-            try:
-                leads = plan_leads(row, planner)
-                record["plan"] = leads
-                for policy in ("flat", "dynamic"):
-                    record[policy] = evaluate(row, index, policy, leads, planner.usages)
-                    if payment_blocked(record):
-                        emit(record)
-                        return
-            except Exception as exc:
-                for policy in ("flat", "dynamic"):
-                    record[policy] = {"error": "planner: " + type(exc).__name__ + ": " + str(exc),
-                                      "calls": len(planner.usages),
-                                      "tokens": sum(u.get("total_tokens", 0) for u in planner.usages)}
+            if "single" in args.policies:
+                record["single"] = evaluate(row, index, "single")
                 if payment_blocked(record):
                     emit(record)
                     return
+            dag_policies = [name for name in args.policies if name != "single"]
+            if dag_policies:
+                planner = DeepSeekClient(max_tokens=900, total_token_budget=BUDGET)
+                try:
+                    leads = plan_leads(row, planner)
+                    record["plan"] = leads
+                    for policy in dag_policies:
+                        record[policy] = evaluate(row, index, policy, leads, planner.usages)
+                        if payment_blocked(record):
+                            emit(record)
+                            return
+                except Exception as exc:
+                    for policy in dag_policies:
+                        record[policy] = {"error": "planner: " + type(exc).__name__ + ": " + str(exc),
+                                          "calls": len(planner.usages),
+                                          "tokens": sum(u.get("total_tokens", 0) for u in planner.usages)}
+                    if payment_blocked(record):
+                        emit(record)
+                        return
             emit(record)
 
 

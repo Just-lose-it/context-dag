@@ -28,3 +28,22 @@ The six frozen evaluation queries were run once with the 32,000-token cap. These
 The single context had one JSON parse error; the flat DAG had one token-budget error. Every dynamic run exceeded the token budget before producing a final answer. The observed total can pass 32,000 because the client checks usage after each model response, not before it. The dynamic grandchildren read a labeled gold document absent from the flat DAG's reads on two of six questions, but neither run completed. Thus the current controller demonstrates occasional new evidence discovery, not a net answer-quality benefit. A flat DAG answered one question correctly that the single context missed, while the single context answered one that the flat DAG failed on; aggregate exact match was tied and the flat DAG cost more than twice as many tokens.
 
 The diagnostic queries are excluded from this table. At the initial 16,000-token cap most policies failed before answering; increasing the cap to 32,000 was the only protocol change before the six evaluation queries. This small, curated candidate-pool pilot cannot establish statistical superiority or performance on the official full corpus. `audit.py` reports numeric summaries without printing decrypted benchmark content.
+
+## New held-out sample: guarded expansion
+
+`selection_v2.json` freezes eight previously unused offsets by a new SHA-256 ranking before their content was downloaded: two diagnostics and six new evaluation questions. The guarded policy retains the same two-lead plan and evidence-gap check, but permits at most one grandchild per question. It checks observed token usage before expanding and stops unfinished workers when fewer than 9,000 tokens remain, reserving capacity for the finalizer. A diagnostic run confirmed that it could expand and still finish both questions; no thresholds were changed before the six new evaluation questions.
+
+| Policy | Strict exact match | Completed | Total observed tokens | Model calls | Child expansions |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Single context | 3/6 | 5/6 | 82,018 | 36 | 0 |
+| Flat two-lead DAG | 3/6 | 5/6 | 154,327 | 80 | 0 |
+| Guarded dynamic DAG | 3/6 | 6/6 | 151,344 | 85 | 2 |
+
+The guarded policy avoids the six budget failures of the earlier unconstrained dynamic policy on a **different** six-question sample. Its two expansions did not improve exact match over either baseline. On one question, a grandchild read a labeled gold document not read by the flat DAG, but both policies answered that question correctly. The guarded policy forced eight worker stops to preserve finalizer capacity, so its complete-answer rate must not be mistaken for complete evidence collection. The single context again used substantially fewer tokens. The flat policy had one budget failure and the single context one JSON parse error. Because the old and new samples differ, the two tables are not a paired estimate of the guard's effect; the new paired comparison is flat versus guarded within this table.
+
+```powershell
+python benchmarks/browsecomp/download.py --selection benchmarks/browsecomp/selection_v2.json
+python benchmarks/browsecomp/run.py --split diagnostic --selection benchmarks/browsecomp/selection_v2.json --policies single flat guarded
+python benchmarks/browsecomp/run.py --split evaluation --selection benchmarks/browsecomp/selection_v2.json --policies single flat guarded
+python benchmarks/browsecomp/audit.py --selection benchmarks/browsecomp/selection_v2.json --policies single flat guarded
+```
