@@ -166,8 +166,22 @@ def main():
               if (item := json.loads(line))["id"] in ids}
     output = args.output or HERE / "results" / f"multilevel_{args.group}.jsonl"
     output.parent.mkdir(parents=True, exist_ok=True)
-    completed = {row["id"] for line in output.open(encoding="utf-8") if (row := json.loads(line))} if output.exists() else set()
+    previous = [json.loads(line) for line in output.open(encoding="utf-8")] if output.exists() else []
+    completed = {row["id"] for row in previous
+                 if row.get("stopped_reason") != "payment_required"
+                 and not any("HTTP Error 402" in str(row.get(p, {}).get("error", ""))
+                             for p in ("single", "single_review", "flat", "nested"))}
     with output.open("a", encoding="utf-8") as handle:
+        def emit(row):
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            handle.flush()
+            print(row["id"], {name: row.get(name, {}).get("joint_em", "error")
+                              for name in ("single", "single_review", "flat", "nested")}, flush=True)
+
+        def payment_blocked(row):
+            return any("HTTP Error 402" in str(value.get("error", ""))
+                       for value in row.values() if isinstance(value, dict))
+
         for item_id in ids:
             if item_id in completed:
                 continue
@@ -177,21 +191,30 @@ def main():
                    "split": "development" if args.start + ids.index(item_id) < 2 else "evaluation"}
             for name in ("single", "single_review"):
                 row[name] = evaluate_policy(name, question, item)
+                if payment_blocked(row):
+                    row["stopped_reason"] = "payment_required"
+                    emit(row)
+                    return
             planner = DeepSeekClient(max_tokens=1200, total_token_budget=BUDGET)
             try:
                 branches = plan_branches(question, planner)
                 row["plan"] = branches
                 for name in ("flat", "nested"):
                     row[name] = evaluate_policy(name, question, item, branches, planner.usages)
+                    if payment_blocked(row):
+                        row["stopped_reason"] = "payment_required"
+                        emit(row)
+                        return
             except Exception as exc:
                 for name in ("flat", "nested"):
                     row[name] = {"error": "planner: " + type(exc).__name__ + ": " + str(exc),
                                  "calls": len(planner.usages),
                                  "tokens": sum(u.get("total_tokens", 0) for u in planner.usages)}
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-            handle.flush()
-            print(item_id, {name: row[name].get("joint_em", "error")
-                            for name in ("single", "single_review", "flat", "nested")}, flush=True)
+                if payment_blocked(row):
+                    row["stopped_reason"] = "payment_required"
+                    emit(row)
+                    return
+            emit(row)
 
 
 if __name__ == "__main__":

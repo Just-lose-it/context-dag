@@ -43,3 +43,18 @@ The first diagnostic version allowed optional nested `spawn` but produced zero c
 The second diagnostic version also produced zero child spawns on the same four development items. The third version adds an explicit model call at each first-level child to decide whether its lead contains two independent factual unknowns; a positive decision creates two grandchildren. That call is included in the nested policy's token budget. The first two versions remain development diagnostics; held-out items will use only version three.
 
 On the four third-version development items, nested DAG produced child spawns on three items (two chain, one branch), so the multi-level execution path is exercised. It exceeded the 24,000-token cap on the other branch item. Nested had no joint-correct answer, while flat had one; these development items are diagnostic and do not estimate performance. The split decision also fired on chain items, so it does not yet discriminate branching structure well. No further prompt or threshold tuning will be done on the held-out six items per group.
+
+### Held-out result and interruption
+
+The six held-out 4hop3 branch-proxy items completed. `python benchmarks/musique/summarize_multilevel.py` reproduces the aggregate below. Errors count as failures; one model-generated initial plan lacked the required two branches, affecting both DAG conditions.
+
+| Policy | Answer EM | Support EM | Joint EM | Errors | Child spawns | Model calls | Total tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Single call | 3/6 | 1/6 | 1/6 | 0 | 0 | 6 | 15,377 |
+| Single plus review | 2/6 | 1/6 | 0/6 | 0 | 0 | 12 | 31,183 |
+| Flat two-lead DAG | 3/6 | 1/6 | 0/6 | 1 | 0 | 44 | 36,898 |
+| Conditional nested DAG | 4/6 | 2/6 | 2/6 | 1 | 8 | 91 | 83,649 |
+
+The nested policy gained one joint-correct item over the single call, but spent 5.4 times as many tokens and made 91 versus 6 model calls. This six-item result cannot establish a reliable benefit. In the two items where nested was jointly correct, the flat DAG had already read all four gold supporting paragraphs. Nested generated more complete final evidence and, on one item, corrected the answer; the trace therefore does **not** show that a new branch discovered an otherwise unread gold document. The split controller also spawned on both chain development items. Current evidence points to evidence integration and extra sampling as possible explanations, not a demonstrated task-structure-aware expansion rule.
+
+The chain-proxy held-out run was interrupted by the DeepSeek API returning `HTTP 402 Payment Required`: the first item reached that error during nested execution, and the other five had no successful model calls. There are zero complete paired chain items, so no chain-versus-branch conclusion is available. The runner now stops on the first 402 and allows those rows to be rerun after the external account state changes; the summarizer excludes payment-blocked rows. Do not count 402 as an algorithmic failure or treat the partial chain outputs as a full comparison.
