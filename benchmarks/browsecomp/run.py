@@ -14,7 +14,7 @@ from benchmarks.hotpotqa.run import ask, normalize
 from benchmarks.browsecomp.search_index import SearchIndex
 
 HERE = Path(__file__).parent
-BUDGET = 16000
+BUDGET = 32000
 ANSWER_SCHEMA = ('Return {"answer":"short final answer","evidence_docids":["docid",...]}. '
                  'Use only evidence found through the supplied search and read tools.')
 
