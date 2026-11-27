@@ -68,7 +68,7 @@ The fixed executor follows the “context DAG and global datastore” abstractio
 The [HotpotQA pilot](benchmarks/hotpotqa/README.md) reports two frozen samples totaling 60 questions. A [MuSiQue pilot](benchmarks/musique/README.md) adds frozen 2-hop and 4-hop samples. Neither establishes an answer-quality gain for the current DAG policies. [Routing experiments](benchmarks/routing/README.md) include a fan-out mechanism check and a frozen live `deepseek-flash` comparison: targeted handoff and shared read each used 80.7% fewer prompt tokens than broadcast with a known single reader. Datasets and per-question predictions stay local.
 The [research direction note](docs/research_direction.md) records the results and the remaining reader-prediction question.
 
-A [multi-level MuSiQue diagnostic](benchmarks/musique/README.md#multi-level-spawn-diagnostic-protocol) exercises child-to-grandchild spawning on frozen four-hop items. The nested policy improved joint exact match on the six completed branch-proxy items but used far more tokens; a trace audit found no newly retrieved gold paragraph relative to flat DAG. The chain-proxy evaluation could not finish after the API returned HTTP 402. No general dynamic-DAG gain is established.
+A [multi-level MuSiQue diagnostic](benchmarks/musique/README.md#multi-level-spawn-diagnostic-protocol) exercises child-to-grandchild spawning on frozen four-hop items. The nested policy improved joint exact match on six branch-proxy items but used far more tokens; a trace audit found no newly retrieved gold paragraph relative to flat DAG. On six chain-proxy items it spawned seven times with no joint-correct answer. No general dynamic-DAG gain is established.
 
 ## License
 

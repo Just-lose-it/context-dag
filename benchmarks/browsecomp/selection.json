@@ -1,0 +1,18 @@
+{
+  "dataset": "Tevatron/browsecomp-plus",
+  "revision": "144cff8e35b5eaef7e526346aa60774a9deb941f",
+  "split": "test",
+  "method": "First eight row offsets ranked by SHA-256(context-dag-browsecomp-v1:offset), before any query content or model output was read. First two diagnostic, remaining six held out.",
+  "diagnostic_offsets": [
+    289,
+    453
+  ],
+  "evaluation_offsets": [
+    553,
+    22,
+    657,
+    561,
+    172,
+    166
+  ]
+}

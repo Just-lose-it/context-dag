@@ -57,7 +57,16 @@ The six held-out 4hop3 branch-proxy items completed. `python benchmarks/musique/
 
 The nested policy gained one joint-correct item over the single call, but spent 5.4 times as many tokens and made 91 versus 6 model calls. This six-item result cannot establish a reliable benefit. In the two items where nested was jointly correct, the flat DAG had already read all four gold supporting paragraphs. Nested generated more complete final evidence and, on one item, corrected the answer; the trace therefore does **not** show that a new branch discovered an otherwise unread gold document. The split controller also spawned on both chain development items. Current evidence points to evidence integration and extra sampling as possible explanations, not a demonstrated task-structure-aware expansion rule.
 
-The chain-proxy held-out run was interrupted by the DeepSeek API returning `HTTP 402 Payment Required`: the first item reached that error during nested execution, and the other five had no successful model calls. There are zero complete paired chain items, so no chain-versus-branch conclusion is available. The runner now stops on the first 402 and allows those rows to be rerun after the external account state changes; the summarizer excludes payment-blocked rows. Do not count 402 as an algorithmic failure or treat the partial chain outputs as a full comparison.
+The chain-proxy held-out run was initially interrupted by the DeepSeek API returning `HTTP 402 Payment Required`. After the account state changed, all six items were rerun under the locked policy; the summarizer keeps the latest complete row per ID and excludes the old payment-blocked attempts. The chain-proxy results are:
+
+| Policy | Answer EM | Support EM | Joint EM | Errors | Child spawns | Model calls | Total tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Single call | 3/6 | 0/6 | 0/6 | 0 | 0 | 6 | 16,585 |
+| Single plus review | 3/6 | 0/6 | 0/6 | 0 | 0 | 12 | 33,534 |
+| Flat two-lead DAG | 3/6 | 0/6 | 0/6 | 0 | 0 | 50 | 41,825 |
+| Conditional nested DAG | 2/6 | 0/6 | 0/6 | 1 | 7 | 85 | 69,609 |
+
+The one nested error was an observed-usage budget overrun, not a payment failure. The split controller generated grandchildren seven times on chain items yet improved neither joint correctness nor answer EM. Across these 12 held-out items the pattern is consistent with possible benefit on some branching questions and wasted work on chain questions, but the sample is too small and the gain is too expensive to establish a useful task-structure-aware policy.
 
 ### Trace audit: did grandchildren find new required evidence?
 

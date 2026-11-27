@@ -11,3 +11,5 @@ benchmarks/hotpotqa/results/
 benchmarks/musique/data/
 benchmarks/musique/results/
 benchmarks/routing/results/
+benchmarks/browsecomp/data/
+benchmarks/browsecomp/results/
