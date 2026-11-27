@@ -38,6 +38,7 @@ To deliver directly to selected outgoing successors, return `RoutingDecision("pu
 | Action | Effect |
 | --- | --- |
 | `read_dag(verbose=False)` | Observe node/edge IDs and statuses; `verbose=True` also shows prompts and results. The observation is passed to the next decision. |
+| `search_docs(query=..., limit=5)` | Search a caller-supplied document index; search results return as the next observation. |
 | `read_docs(documents=(...))` | Read documents from a caller-supplied tool; the returned observation is passed to the next decision. |
 | `read_result(key=...)` | Read an allowed node result from shared storage by its key. |
 | `spawn(children=((id, prompt), ...))` | Add new child contexts for the next stage. The parent waits and resumes when all direct children yield. |
@@ -49,6 +50,8 @@ When a child yields, its result is written to `SharedStore` under `node/<id>/res
 `JSONAgent` adapts a model function `complete(messages) -> JSON text` to these actions, keeping separate message histories for each context. This is an application-level tool loop: the model returns a JSON action, the framework executes it, and the next call receives the observation. `DeepSeekClient` supplies an optional `deepseek-flash` client using the official Chat Completions API; it reads `DEEPSEEK_API_KEY` from the environment (or Windows user variables) and never stores it in the repository. A live smoke test is in [examples/deepseek_dynamic.py](examples/deepseek_dynamic.py).
 
 For `read_docs`, pass a `read_documents(ids, node_id)` callback to `DynamicDAG.run`. The callback should enforce document permissions and return errors as observations when a request can be corrected. `DeepSeekClient(total_token_budget=...)` stops further calls once observed usage reaches the cap; a call can exceed the cap because exact usage arrives with the response.
+
+For `search_docs`, pass a `search_documents(query, limit, node_id)` callback. Search and reading remain task-supplied tools; the framework records each action and returns the tool observation to the requesting node.
 
 ## Scope and limits
 

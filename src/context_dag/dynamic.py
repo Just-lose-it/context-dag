@@ -7,7 +7,7 @@ from typing import Any, Callable, Literal
 
 from .core import Artifact, SharedStore
 
-ActionName = Literal["read_dag", "read_docs", "read_result", "spawn", "yield", "conclude"]
+ActionName = Literal["read_dag", "search_docs", "read_docs", "read_result", "spawn", "yield", "conclude"]
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,8 @@ class Action:
     verbose: bool = False
     children: tuple[tuple[str, str], ...] = ()  # (node_id, prompt)
     documents: tuple[str, ...] = ()
+    query: str = ""
+    limit: int = 5
     key: str = ""
     result: str = ""
 
@@ -82,6 +84,7 @@ class DynamicDAG:
         max_nodes: int = 64,
         max_steps: int = 256,
         read_documents: Callable[[tuple[str, ...], str], dict[str, Any]] | None = None,
+        search_documents: Callable[[str, int, str], dict[str, Any]] | None = None,
         handoff_limit: int = 256,
     ) -> DynamicResult:
         """Run each stage to completion, then start its spawned children.
@@ -144,6 +147,15 @@ class DynamicDAG:
                     observation = read_documents(action.documents, node.id)
                     self.events.append({"node": node.id, "action": "read_docs",
                                         "documents": list(action.documents)})
+                    continue
+                if action.name == "search_docs":
+                    if search_documents is None:
+                        raise ValueError("search_docs requires a search_documents tool")
+                    if not action.query.strip() or action.limit < 1:
+                        raise ValueError("search_docs requires a query and positive limit")
+                    observation = search_documents(action.query, action.limit, node.id)
+                    self.events.append({"node": node.id, "action": "search_docs",
+                                        "query": action.query, "limit": action.limit})
                     continue
                 if action.name == "read_result":
                     if not action.key:

@@ -23,7 +23,8 @@ class JSONAgent:
         if not history:
             history.append({"role": "system", "content": (
                 "You control one node of a context DAG. Return one JSON object only. "
-                "Actions: read_dag {verbose: bool}; read_docs {documents: [id,...]}; "
+                "Actions: read_dag {verbose: bool}; search_docs {query: str, limit: int}; "
+                "read_docs {documents: [id,...]}; "
                 "read_result {key: str}; "
                 "spawn {children: [[id,prompt],...]}; "
                 "yield {result: str}; conclude {result: str}. "
@@ -37,7 +38,7 @@ class JSONAgent:
         if "action" not in data and "answer" not in data:
             repair = history + [{"role": "user", "content": (
                 "Return exactly one JSON action with an action field: "
-                "read_dag, read_docs, read_result, spawn, yield, or conclude."
+                "read_dag, search_docs, read_docs, read_result, spawn, yield, or conclude."
             )}]
             raw = self.complete(repair)
             data = json.loads(raw)
@@ -50,5 +51,7 @@ class JSONAgent:
         return Action(name=name, verbose=bool(data.get("verbose", False)),
                       children=tuple((str(x[0]), str(x[1])) for x in data.get("children", [])),
                       documents=tuple(str(x) for x in data.get("documents", [])),
+                      query=str(data.get("query", "")),
+                      limit=int(data.get("limit", 5)),
                       key=str(data.get("key", "")),
                       result=str(data.get("result", "")))

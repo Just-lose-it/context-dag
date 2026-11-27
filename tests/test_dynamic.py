@@ -151,6 +151,18 @@ class DynamicTests(unittest.TestCase):
                          read_documents=lambda ids, node: {"A": "text"})
         self.assertEqual(result.events[0]["action"], "read_docs")
 
+    def test_search_docs_observation(self):
+        dag = DynamicDAG("find a source")
+        def decide(ctx):
+            if ctx.observation is None:
+                return Action("search_docs", query="specific clue", limit=2)
+            self.assertEqual(ctx.observation["hits"], ["d1", "d2"])
+            return Action("conclude", result="done")
+        result = dag.run(decide, lambda snapshot, store: "unused",
+                         search_documents=lambda query, limit, node: {"hits": ["d1", "d2"]})
+        self.assertEqual(result.answer, "done")
+        self.assertEqual(result.events[0]["action"], "search_docs")
+
 
 if __name__ == "__main__":
     unittest.main()
