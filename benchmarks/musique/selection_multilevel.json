@@ -1,0 +1,25 @@
+{
+  "method": "First eight hash-ordered, previously unused answerable dev IDs with 20 paragraphs in each MuSiQue 4hop1 and 4hop3 group, excluding reuse of any component question ID within a group. First two per group are development diagnostics; remaining six are held-out evaluation. The ID group is a structural proxy; no gold decomposition or answer is passed to policies.",
+  "ids": {
+    "chain_4hop1": [
+      "4hop1__473563_309800_355213_203322",
+      "4hop1__429751_32392_823060_610794",
+      "4hop1__370129_621192_10659_42311",
+      "4hop1__271272_508773_85832_745702",
+      "4hop1__860115_798482_131926_87157",
+      "4hop1__61681_53706_795904_580996",
+      "4hop1__130404_59747_211319_557671",
+      "4hop1__31050_725495_49925_349426"
+    ],
+    "branch_4hop3": [
+      "4hop3__519729_88460_30152_20999",
+      "4hop3__129754_29339_508306_70744",
+      "4hop3__524186_219173_128875_72134",
+      "4hop3__710473_354093_254885_76356",
+      "4hop3__275416_24325_156850_10557",
+      "4hop3__668721_132409_146285_35031",
+      "4hop3__373866_5189_276146_86687",
+      "4hop3__773800_152874_161616_77103"
+    ]
+  }
+}
