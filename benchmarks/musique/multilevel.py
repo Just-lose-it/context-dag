@@ -14,7 +14,7 @@ from benchmarks.hotpotqa.run import ANSWER_SCHEMA, ask, passages, single
 from benchmarks.musique.run import convert, score
 
 HERE = Path(__file__).parent
-BUDGET = 16000
+BUDGET = 24000
 
 
 def plan_branches(question, client):
@@ -29,8 +29,10 @@ def plan_branches(question, client):
 
 
 def worker_prompt(main_question, lead, titles, *, can_spawn):
-    option = ("If this lead contains two independent unknowns, you may spawn at most two smaller "
-              "investigators with self-contained prompts. " if can_spawn else "Do not spawn other nodes. ")
+    option = ("If this lead asks for two or more distinct facts, first spawn two smaller investigators, "
+              "one fact per child. Give each a self-contained question; then combine their evidence. "
+              "If the lead asks for only one fact, read documents yourself. "
+              if can_spawn else "Do not spawn other nodes; investigate the lead yourself. ")
     return (f"Main question: {main_question}\nYour investigative lead: {lead}\n"
             f"Available document titles: {json.dumps(titles, ensure_ascii=False)}\n"
             "Read relevant documents with read_docs before reporting evidence. " + option +
@@ -38,13 +40,16 @@ def worker_prompt(main_question, lead, titles, *, can_spawn):
             "using exact P-numbered titles and paragraph index 0. Never conclude the whole task.")
 
 
-def dag_policy(question, client, branches, *, nested):
+def dag_policy(question, client, branches, *, nested, telemetry=None):
     title_map = {title: sentences for title, sentences in question["context"]}
     titles = list(title_map)
     dag = DynamicDAG(f"Investigate: {question['question']}")
     agent = JSONAgent(client)
     depth = {"root": 0, "lead_0": 1, "lead_1": 1}
-    counts = {"spawn": 0, "read_docs": 0}
+    counts = {"spawn": 0, "read_docs": 0, "split_checks": 0}
+    if telemetry is not None:
+        telemetry["dag"] = dag
+        telemetry["counts"] = counts
 
     def read_documents(ids, node_id):
         counts["read_docs"] += 1
@@ -69,6 +74,22 @@ def dag_policy(question, client, branches, *, nested):
                 'Summarize the evidence from your investigators. Return {"finding":"short finding", "evidence":[...]}. Preserve exact paragraph references.',
                 f"Lead: {ctx.prompt}\nChild results: {json.dumps(evidence, ensure_ascii=False)}")
             return Action("yield", result=json.dumps(merged, ensure_ascii=False))
+        if nested and depth[ctx.node_id] == 1 and ctx.observation is None:
+            counts["split_checks"] += 1
+            split = ask(client,
+                'Decide whether this investigative lead contains two independently researchable factual unknowns. Return {"split":true_or_false,"subquestions":["self-contained question 1","self-contained question 2"]}. Set split=false and subquestions=[] for a single fact. Do not use the gold answer.',
+                ctx.prompt)
+            questions = split.get("subquestions", [])
+            if (split.get("split") is True and isinstance(questions, list) and len(questions) == 2
+                    and all(isinstance(q, str) and q.strip() for q in questions)):
+                children = []
+                for i, subquestion in enumerate(questions):
+                    child_id = f"{ctx.node_id}_sub_{i}"
+                    depth[child_id] = 2
+                    children.append((child_id, worker_prompt(question["question"], subquestion, titles,
+                                                             can_spawn=False)))
+                counts["spawn"] += 1
+                return Action("spawn", children=tuple(children))
         action = agent(ctx)
         if action.name == "conclude":
             return Action("yield", result=action.result)
@@ -104,6 +125,7 @@ def evaluate_policy(name, question, item, plan=None, plan_usages=None):
         client.usages.extend(plan_usages)
     start = time.perf_counter()
     row = {}
+    telemetry = {}
     try:
         if name == "single":
             prediction = single(question, client)
@@ -114,11 +136,19 @@ def evaluate_policy(name, question, item, plan=None, plan_usages=None):
                 f"Question: {question['question']}\nDraft: {json.dumps(draft, ensure_ascii=False)}\n"
                 f"Paragraphs:\n{passages(question)}")
         else:
-            prediction, nodes, counts, events = dag_policy(question, client, plan, nested=name == "nested")
-            row.update(nodes=nodes, child_spawns=counts["spawn"], reads=counts["read_docs"], events=events)
+            prediction, nodes, counts, events = dag_policy(question, client, plan,
+                                                            nested=name == "nested", telemetry=telemetry)
+            row.update(nodes=nodes, child_spawns=counts["spawn"], reads=counts["read_docs"],
+                       split_checks=counts["split_checks"], events=events)
         row.update(prediction=prediction, **score(prediction, item))
     except Exception as exc:
         row["error"] = type(exc).__name__ + ": " + str(exc)
+        if "dag" in telemetry:
+            row.update(nodes=len(telemetry["dag"].nodes),
+                       child_spawns=telemetry["counts"]["spawn"],
+                       reads=telemetry["counts"]["read_docs"],
+                       split_checks=telemetry["counts"]["split_checks"],
+                       events=list(telemetry["dag"].events))
     row.update(calls=len(client.usages), tokens=sum(u.get("total_tokens", 0) for u in client.usages),
                seconds=round(time.perf_counter() - start, 3))
     return row
