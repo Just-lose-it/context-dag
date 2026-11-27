@@ -58,3 +58,15 @@ The six held-out 4hop3 branch-proxy items completed. `python benchmarks/musique/
 The nested policy gained one joint-correct item over the single call, but spent 5.4 times as many tokens and made 91 versus 6 model calls. This six-item result cannot establish a reliable benefit. In the two items where nested was jointly correct, the flat DAG had already read all four gold supporting paragraphs. Nested generated more complete final evidence and, on one item, corrected the answer; the trace therefore does **not** show that a new branch discovered an otherwise unread gold document. The split controller also spawned on both chain development items. Current evidence points to evidence integration and extra sampling as possible explanations, not a demonstrated task-structure-aware expansion rule.
 
 The chain-proxy held-out run was interrupted by the DeepSeek API returning `HTTP 402 Payment Required`: the first item reached that error during nested execution, and the other five had no successful model calls. There are zero complete paired chain items, so no chain-versus-branch conclusion is available. The runner now stops on the first 402 and allows those rows to be rerun after the external account state changes; the summarizer excludes payment-blocked rows. Do not count 402 as an algorithmic failure or treat the partial chain outputs as a full comparison.
+
+### Trace audit: did grandchildren find new required evidence?
+
+`python benchmarks/musique/audit_multilevel.py` recomputes document-read coverage from saved `read_docs` events. It ignores requests that the document tool rejected (over five titles or unknown titles). Five of the six branch-proxy evaluation items have completed, paired flat and nested traces; the sixth failed in their shared initial planner.
+
+| Measure across five paired items | Flat DAG | Nested DAG |
+| --- | ---: | ---: |
+| Gold supporting paragraphs read, out of 20 | 18 | 18 |
+| Gold supporting paragraphs cited in final answer, out of 20 | 12 | 17 |
+| Joint exact match | 0/5 | 2/5 |
+
+Grandchildren read all 18 gold paragraphs reached by the nested policy; 11 of these were not read by their own first-level parent. **None** was new relative to the flat policy's reads. The nested policy therefore redistributed and repeated evidence work rather than discovering a required document missed by flat DAG. More complete final citation may reflect separate contexts, repeated sampling, different finalizer inputs, or model variability; this audit cannot distinguish those causes. Extra or incorrect final citations still count against support exact match. The high token and call costs in the table above remain part of the result.
